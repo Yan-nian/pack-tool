@@ -50,14 +50,14 @@
 
 项目已配置 GitHub Actions 自动构建，每次推送到 main/master 分支时会自动构建并推送镜像到 GitHub Container Registry。
 
+**单容器集成方案** - 前后端集成在一个 Docker 镜像中，部署更简单！
+
 **可用镜像：**
-- 后端: `ghcr.io/yan-nian/pack-tool-backend:latest`
-- 前端: `ghcr.io/yan-nian/pack-tool-frontend:latest`
+- 完整应用: `ghcr.io/yan-nian/pack-tool:latest`
 
 **拉取镜像：**
 ```powershell
-docker pull ghcr.io/yan-nian/pack-tool-backend:latest
-docker pull ghcr.io/yan-nian/pack-tool-frontend:latest
+docker pull ghcr.io/yan-nian/pack-tool:latest
 ```
 
 ## 快速开始
@@ -74,9 +74,9 @@ docker pull ghcr.io/yan-nian/pack-tool-frontend:latest
    cd pack-tool
    ```
 
-3. **使用预构建镜像启动**
+3. **一键启动**
    ```powershell
-   docker-compose -f docker-compose.prod.yml up -d
+   docker-compose up -d
    ```
 
 4. **访问应用**
@@ -85,7 +85,7 @@ docker pull ghcr.io/yan-nian/pack-tool-frontend:latest
 
 5. **停止服务**
    ```powershell
-   docker-compose -f docker-compose.prod.yml down
+   docker-compose down
    ```
 
 #### 方式二：本地构建镜像
@@ -96,7 +96,7 @@ docker pull ghcr.io/yan-nian/pack-tool-frontend:latest
    cd pack-tool
    ```
 
-2. **构建并启动服务**
+2. **构建并启动**
    ```powershell
    docker-compose up -d --build
    ```
@@ -202,8 +202,7 @@ npm start
 excel-tool/
 ├── backend/                 # 后端服务
 │   ├── main.py             # FastAPI 应用
-│   ├── requirements.txt    # Python 依赖
-│   └── Dockerfile          # 后端 Docker 配置
+│   └── requirements.txt    # Python 依赖
 ├── frontend/               # 前端应用
 │   ├── public/             # 静态资源
 │   ├── src/
@@ -211,10 +210,9 @@ excel-tool/
 │   │   ├── App.css         # 样式文件
 │   │   └── index.js        # 入口文件
 │   ├── package.json        # Node 依赖
-│   ├── Dockerfile          # 前端 Docker 配置
-│   ├── nginx.conf          # Nginx 配置
 │   └── .env                # 环境变量
-├── data/                   # 数据目录（可选）
+├── data/                   # 数据目录
+├── Dockerfile              # 单容器 Docker 配置
 ├── docker-compose.yml      # Docker Compose 配置
 ├── .gitignore             # Git 忽略文件
 └── README.md              # 项目文档
