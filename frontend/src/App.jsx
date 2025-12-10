@@ -190,6 +190,9 @@ function App() {
         total: response.data.total
       });
       
+      // 清除当前表选择，以显示匹配结果
+      setCurrentTable(null);
+      
       message.success(`匹配完成，共 ${response.data.total} 条数据`);
       setMatchModalVisible(false);
       form.resetFields();
