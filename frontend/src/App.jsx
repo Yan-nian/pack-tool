@@ -28,6 +28,14 @@ function App() {
   const [searchResults, setSearchResults] = useState(null);
   const [matchModalVisible, setMatchModalVisible] = useState(false);
   const [form] = Form.useForm();
+  
+  // 监听表单字段变化用于联动
+  const sourceTableValue = Form.useWatch('sourceTable', form);
+  const targetTableValue = Form.useWatch('targetTable', form);
+  
+  // 获取选中表的列
+  const sourceTableColumns = tables.find(t => t.name === sourceTableValue)?.columns || [];
+  const targetTableColumns = tables.find(t => t.name === targetTableValue)?.columns || [];
 
   // 加载表列表
   const loadTables = async () => {
@@ -407,12 +415,11 @@ function App() {
             rules={[{ required: true, message: '请选择源表匹配列' }]}
           >
             <Select placeholder="选择要匹配的列">
-              {form.getFieldValue('sourceTable') &&
-                tables.find(t => t.name === form.getFieldValue('sourceTable'))?.columns.map(col => (
-                  <Option key={col} value={col}>
-                    {col}
-                  </Option>
-                ))}
+              {sourceTableColumns.map(col => (
+                <Option key={col} value={col}>
+                  {col}
+                </Option>
+              ))}
             </Select>
           </Form.Item>
           
@@ -436,12 +443,11 @@ function App() {
             rules={[{ required: true, message: '请选择要获取的列' }]}
           >
             <Select mode="multiple" placeholder="选择要获取的列（可多选）">
-              {form.getFieldValue('targetTable') &&
-                tables.find(t => t.name === form.getFieldValue('targetTable'))?.columns.map(col => (
-                  <Option key={col} value={col}>
-                    {col}
-                  </Option>
-                ))}
+              {targetTableColumns.map(col => (
+                <Option key={col} value={col}>
+                  {col}
+                </Option>
+              ))}
             </Select>
           </Form.Item>
         </Form>
