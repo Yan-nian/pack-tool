@@ -281,8 +281,17 @@ async def match_data(request: MatchRequest):
 @app.post("/multi-match")
 async def multi_match_data(request: MultiMatchRequest):
     """匹配多个目标表"""
+    print(f"收到匹配请求: source_table={request.source_table}, source_column={request.source_column}")
+    print(f"目标表数量: {len(request.targets)}")
+    for i, t in enumerate(request.targets):
+        print(f"  目标表{i+1}: table={t.target_table}, columns={t.target_columns}, conditions={t.conditions}")
+    
     if request.source_table not in excel_data:
         raise HTTPException(status_code=404, detail=f"源表 '{request.source_table}' 不存在")
+    
+    # 检查源列是否存在
+    if request.source_column not in excel_data[request.source_table].columns:
+        raise HTTPException(status_code=400, detail=f"源表中不存在列 '{request.source_column}'")
     
     source_df = excel_data[request.source_table].copy()
     source_df[request.source_column] = source_df[request.source_column].astype(str).str.strip()

@@ -153,6 +153,28 @@ function App() {
 
   // 匹配数据（支持多表）
   const handleMatch = async (values, selections = null) => {
+    console.log('handleMatch called with values:', values);
+    
+    // 验证必要字段
+    if (!values.sourceTable || !values.sourceColumn) {
+      message.error('请选择源表和匹配列');
+      return;
+    }
+    
+    if (!values.targets || !values.targets.length) {
+      message.error('请至少添加一个目标表');
+      return;
+    }
+    
+    // 验证每个目标表
+    for (let i = 0; i < values.targets.length; i++) {
+      const t = values.targets[i];
+      if (!t.targetTable || !t.targetColumns || !t.targetColumns.length) {
+        message.error(`请完整填写目标表 ${i + 1} 的配置`);
+        return;
+      }
+    }
+    
     setLoading(true);
     try {
       // 构建多表匹配参数
@@ -172,7 +194,10 @@ function App() {
         params.selections = selections;
       }
       
+      console.log('Sending multi-match request with params:', params);
+      
       const response = await axios.post('/multi-match', params);
+      console.log('Multi-match response:', response.data);
       
       // 检查是否需要用户选择
       if (response.data.status === 'need_selection') {
