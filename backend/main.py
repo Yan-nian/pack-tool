@@ -64,9 +64,14 @@ class MatchRequest(BaseModel):
     target_columns: List[str]
     selections: Optional[dict] = None  # 用户选择的值 {key: selected_index}
 
+class MatchCondition(BaseModel):
+    source_col: str  # 源表的限制列
+    target_col: str  # 目标表对应的限制列
+
 class MultiMatchTarget(BaseModel):
     target_table: str
     target_columns: List[str]
+    conditions: Optional[List[MatchCondition]] = None  # 额外的匹配限制条件
 
 class MultiMatchRequest(BaseModel):
     source_table: str
@@ -292,14 +297,43 @@ async def multi_match_data(request: MultiMatchRequest):
             target_df = excel_data[target.target_table]
             merge_column = target_df.columns[0]
             
+            # 收集所有需要的列（包括限制条件列）
+            needed_cols = [merge_column] + target.target_columns
+            condition_target_cols = []
+            if target.conditions:
+                for cond in target.conditions:
+                    if cond.target_col not in needed_cols:
+                        needed_cols.append(cond.target_col)
+                    condition_target_cols.append(cond.target_col)
+            
             # 准备目标列
-            target_subset = target_df[[merge_column] + target.target_columns].copy()
+            target_subset = target_df[needed_cols].copy()
             target_subset[merge_column] = target_subset[merge_column].astype(str).str.strip()
             
-            # 检测多值情况
-            target_grouped = target_subset.groupby(merge_column)
-            for key, group in target_grouped:
+            # 将限制条件列也转为字符串
+            for col in condition_target_cols:
+                target_subset[col] = target_subset[col].astype(str).str.strip()
+            
+            # 构建合并键（主键 + 限制条件）
+            merge_keys_source = [request.source_column]
+            merge_keys_target = [merge_column]
+            
+            if target.conditions:
+                for cond in target.conditions:
+                    # 确保源表的限制列也是字符串
+                    if cond.source_col not in source_df.columns:
+                        raise HTTPException(status_code=400, detail=f"源表中不存在列 '{cond.source_col}'")
+                    source_df[cond.source_col] = source_df[cond.source_col].astype(str).str.strip()
+                    merge_keys_source.append(cond.source_col)
+                    merge_keys_target.append(cond.target_col)
+            
+            # 检测多值情况（基于所有合并键）
+            group_cols = merge_keys_target.copy()
+            target_grouped = target_subset.groupby(group_cols)
+            
+            for keys, group in target_grouped:
                 if len(group) > 1:
+                    key_str = str(keys) if isinstance(keys, tuple) else str(keys)
                     options = group[target.target_columns].fillna("").to_dict(orient='records')
                     unique_options = []
                     seen = set()
@@ -311,7 +345,7 @@ async def multi_match_data(request: MultiMatchRequest):
                     if len(unique_options) > 1:
                         if target.target_table not in all_multi_value_keys:
                             all_multi_value_keys[target.target_table] = {}
-                        all_multi_value_keys[target.target_table][key] = unique_options
+                        all_multi_value_keys[target.target_table][key_str] = unique_options
             
             # 如果有多值且无选择，返回让用户选择
             if all_multi_value_keys and not request.selections:
@@ -321,34 +355,34 @@ async def multi_match_data(request: MultiMatchRequest):
                     "message": f"发现多个匹配项有多个值，请选择"
                 }
             
-            # 应用用户选择
-            if request.selections and target.target_table in request.selections:
-                for key, idx in request.selections[target.target_table].items():
-                    if target.target_table in all_multi_value_keys and key in all_multi_value_keys[target.target_table]:
-                        selected = all_multi_value_keys[target.target_table][key][int(idx)]
-                        mask = target_subset[merge_column] == key
-                        for col in target.target_columns:
-                            target_subset.loc[mask, col] = selected.get(col, "")
+            # 去重（基于所有合并键）
+            target_subset = target_subset.drop_duplicates(subset=group_cols, keep='first')
             
-            # 去重
-            target_subset = target_subset.drop_duplicates(subset=[merge_column], keep='first')
+            # 只保留需要的目标列用于合并
+            cols_to_keep = merge_keys_target + target.target_columns
+            target_subset = target_subset[list(dict.fromkeys(cols_to_keep))]  # 去重保持顺序
             
-            # 重命名列避免冲突
+            # 重命名目标列避免冲突
             rename_map = {col: f"{col}({target.target_table})" for col in target.target_columns}
             target_subset = target_subset.rename(columns=rename_map)
             
             # 执行左连接
             source_df = source_df.merge(
                 target_subset,
-                left_on=request.source_column,
-                right_on=merge_column,
+                left_on=merge_keys_source,
+                right_on=merge_keys_target,
                 how='left',
                 suffixes=('', '_dup')
             )
             
-            # 删除重复的合并列
-            if merge_column in source_df.columns and merge_column != request.source_column:
-                source_df = source_df.drop(columns=[merge_column])
+            # 删除重复的合并列（目标表的）
+            for col in merge_keys_target:
+                if col in source_df.columns and col not in merge_keys_source:
+                    source_df = source_df.drop(columns=[col])
+                # 删除带 _dup 后缀的列
+                dup_col = f"{col}_dup"
+                if dup_col in source_df.columns:
+                    source_df = source_df.drop(columns=[dup_col])
         
         data = source_df.fillna("").to_dict(orient='records')
         

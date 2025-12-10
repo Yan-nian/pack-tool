@@ -153,7 +153,8 @@ function App() {
       // 构建多表匹配参数
       const targets = values.targets.map(t => ({
         target_table: t.targetTable,
-        target_columns: t.targetColumns
+        target_columns: t.targetColumns,
+        conditions: t.conditions?.filter(c => c?.source_col && c?.target_col) || []
       }));
       
       const params = {
@@ -631,8 +632,9 @@ function App() {
                         <Select 
                           placeholder="选择目标表"
                           onChange={() => {
-                            // 清空已选列
+                            // 清空已选列和条件
                             form.setFieldValue(['targets', name, 'targetColumns'], []);
+                            form.setFieldValue(['targets', name, 'conditions'], []);
                           }}
                         >
                           {tables.map(table => (
@@ -657,6 +659,56 @@ function App() {
                           ))}
                         </Select>
                       </Form.Item>
+                      
+                      {/* 限制条件 */}
+                      <Form.List name={[name, 'conditions']}>
+                        {(condFields, { add: addCond, remove: removeCond }) => (
+                          <>
+                            {condFields.length > 0 && (
+                              <div style={{ marginBottom: 8, fontSize: 12, color: '#666' }}>
+                                限制条件（源表列 = 目标表列）
+                              </div>
+                            )}
+                            {condFields.map(({ key: condKey, name: condName, ...condRestField }) => (
+                              <Space key={condKey} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                                <Form.Item
+                                  {...condRestField}
+                                  name={[condName, 'source_col']}
+                                  style={{ marginBottom: 0 }}
+                                >
+                                  <Select placeholder="源表列" style={{ width: 150 }}>
+                                    {sourceTableColumns.map(col => (
+                                      <Option key={col} value={col}>{col}</Option>
+                                    ))}
+                                  </Select>
+                                </Form.Item>
+                                <span>=</span>
+                                <Form.Item
+                                  {...condRestField}
+                                  name={[condName, 'target_col']}
+                                  style={{ marginBottom: 0 }}
+                                >
+                                  <Select placeholder="目标表列" style={{ width: 150 }}>
+                                    {targetCols.map(col => (
+                                      <Option key={col} value={col}>{col}</Option>
+                                    ))}
+                                  </Select>
+                                </Form.Item>
+                                <MinusCircleOutlined onClick={() => removeCond(condName)} style={{ color: '#ff4d4f' }} />
+                              </Space>
+                            ))}
+                            <Button 
+                              type="link" 
+                              size="small" 
+                              onClick={() => addCond()} 
+                              icon={<PlusOutlined />}
+                              style={{ padding: 0 }}
+                            >
+                              添加限制条件
+                            </Button>
+                          </>
+                        )}
+                      </Form.List>
                     </Card>
                   );
                 })}
