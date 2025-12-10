@@ -54,6 +54,7 @@ COPY --from=frontend-builder /app/frontend/build /usr/share/nginx/html
 RUN echo 'server {\n\
     listen 80;\n\
     server_name localhost;\n\
+    client_max_body_size 100M;\n\
     \n\
     root /usr/share/nginx/html;\n\
     index index.html;\n\
@@ -65,22 +66,19 @@ RUN echo 'server {\n\
         proxy_set_header Upgrade $http_upgrade;\n\
         proxy_set_header Connection "upgrade";\n\
         proxy_set_header Host $host;\n\
-        proxy_cache_bypass $http_upgrade;\n\
         proxy_set_header X-Real-IP $remote_addr;\n\
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
+        proxy_connect_timeout 60s;\n\
+        proxy_send_timeout 60s;\n\
+        proxy_read_timeout 60s;\n\
     }\n\
     \n\
     # React 路由\n\
     location / {\n\
         try_files $uri $uri/ /index.html;\n\
     }\n\
-    \n\
-    # 静态资源缓存\n\
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {\n\
-        expires 1y;\n\
-        add_header Cache-Control "public, immutable";\n\
-    }\n\
-}' > /etc/nginx/sites-available/default
+}' > /etc/nginx/sites-available/default && \
+    ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
 
 # 创建数据目录
 RUN mkdir -p /app/data
@@ -90,16 +88,23 @@ RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
 # 启动后端服务（后台运行）\n\
-echo "Starting backend service..."\n\
-uvicorn main:app --host 127.0.0.1 --port 8000 &\n\
+echo "Starting backend service on port 8000..."\n\
+cd /app && uvicorn main:app --host 0.0.0.0 --port 8000 &\n\
 \n\
 # 等待后端启动\n\
-sleep 3\n\
+echo "Waiting for backend to start..."\n\
+sleep 5\n\
+\n\
+# 测试后端是否正常\n\
+curl -s http://127.0.0.1:8000/ || echo "Backend may not be ready yet"\n\
 \n\
 # 启动 nginx（前台运行）\n\
 echo "Starting nginx..."\n\
 nginx -g "daemon off;"' > /app/start.sh && \
     chmod +x /app/start.sh
+
+# 安装 curl 用于健康检查
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 80
 
