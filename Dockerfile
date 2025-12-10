@@ -14,22 +14,20 @@ FROM node:18-alpine as frontend-builder
 
 WORKDIR /app/frontend
 
-# 复制前端依赖文件
-COPY frontend/package.json .
-
-# 安装依赖（包含 react-scripts）
-RUN npm install --legacy-peer-deps
-
-# 复制前端源码
+# 复制前端项目文件
+COPY frontend/package.json ./
 COPY frontend/public ./public
 COPY frontend/src ./src
 
 # 设置环境变量
 ENV REACT_APP_API_URL=/api
 ENV CI=true
+ENV GENERATE_SOURCEMAP=false
+ENV NODE_ENV=production
 
-# 构建前端
-RUN npm run build
+# 安装依赖并构建
+RUN npm install --legacy-peer-deps && \
+    npm run build
 
 
 # 最终镜像
