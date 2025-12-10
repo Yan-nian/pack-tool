@@ -5,7 +5,8 @@ import {
 } from 'antd';
 import {
   UploadOutlined, SearchOutlined, LinkOutlined,
-  DeleteOutlined, ReloadOutlined, FileExcelOutlined
+  DeleteOutlined, ReloadOutlined, FileExcelOutlined,
+  DownloadOutlined, CloseOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
 import './App.css';
@@ -27,6 +28,10 @@ function App() {
   const [pagination, setPagination] = useState({ current: 1, pageSize: 50, total: 0 });
   const [searchResults, setSearchResults] = useState(null);
   const [matchModalVisible, setMatchModalVisible] = useState(false);
+  const [matchResults, setMatchResults] = useState(null); // 匹配结果
+  const [multiValueModal, setMultiValueModal] = useState(null); // 多值选择弹窗
+  const [multiValueSelections, setMultiValueSelections] = useState({}); // 用户选择
+  const [pendingMatchParams, setPendingMatchParams] = useState(null); // 待处理的匹配参数
   const [form] = Form.useForm();
   
   // 监听表单字段变化用于联动
@@ -140,27 +145,51 @@ function App() {
   };
 
   // 匹配数据
-  const handleMatch = async (values) => {
+  const handleMatch = async (values, selections = null) => {
     setLoading(true);
     try {
-      const response = await axios.post('/match', {
+      const params = {
         source_table: values.sourceTable,
         source_column: values.sourceColumn,
         target_table: values.targetTable,
         target_columns: values.targetColumns
-      });
+      };
       
-      setTableData(response.data.data);
-      setColumns(response.data.columns.map((col, index) => ({
+      if (selections) {
+        params.selections = selections;
+      }
+      
+      const response = await axios.post('/match', params);
+      
+      // 检查是否需要用户选择
+      if (response.data.status === 'need_selection') {
+        setPendingMatchParams(values);
+        setMultiValueModal(response.data.multi_value_keys);
+        setMultiValueSelections({});
+        setMatchModalVisible(false);
+        message.info(response.data.message);
+        return;
+      }
+      
+      const matchData = response.data.data;
+      const matchCols = response.data.columns.map((col, index) => ({
         title: col,
         dataIndex: col,
         key: col,
         width: 150,
         ellipsis: true,
         fixed: index === 0 ? 'left' : undefined
-      })));
+      }));
       
-      setPagination({ ...pagination, total: response.data.total });
+      // 设置匹配结果
+      setMatchResults({
+        data: matchData,
+        columns: matchCols,
+        sourceTable: values.sourceTable,
+        targetTable: values.targetTable,
+        total: response.data.total
+      });
+      
       message.success(`匹配完成，共 ${response.data.total} 条数据`);
       setMatchModalVisible(false);
       form.resetFields();
@@ -169,6 +198,42 @@ function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // 确认多值选择
+  const handleConfirmSelections = () => {
+    if (pendingMatchParams) {
+      handleMatch(pendingMatchParams, multiValueSelections);
+      setMultiValueModal(null);
+      setPendingMatchParams(null);
+    }
+  };
+
+  // 导出匹配结果为CSV
+  const handleExportMatch = () => {
+    if (!matchResults || !matchResults.data.length) return;
+    
+    const headers = matchResults.columns.map(col => col.title);
+    const rows = matchResults.data.map(row => 
+      matchResults.columns.map(col => {
+        const val = row[col.dataIndex];
+        // 处理包含逗号或引号的值
+        if (typeof val === 'string' && (val.includes(',') || val.includes('"'))) {
+          return `"${val.replace(/"/g, '""')}"`;
+        }
+        return val ?? '';
+      }).join(',')
+    );
+    
+    const csv = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `匹配结果_${matchResults.sourceTable}_${matchResults.targetTable}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    message.success('导出成功');
   };
 
   // 删除表
@@ -363,6 +428,44 @@ function App() {
                   />
                 </Space>
               </Card>
+            ) : matchResults ? (
+              <Card
+                title={
+                  <Space>
+                    <span>匹配结果</span>
+                    <Tag color="green">{matchResults.sourceTable} → {matchResults.targetTable}</Tag>
+                    <Tag color="blue">{matchResults.total} 条数据</Tag>
+                  </Space>
+                }
+                extra={
+                  <Space>
+                    <Button
+                      type="primary"
+                      icon={<DownloadOutlined />}
+                      onClick={handleExportMatch}
+                    >
+                      导出CSV
+                    </Button>
+                    <Button
+                      icon={<CloseOutlined />}
+                      onClick={() => setMatchResults(null)}
+                    >
+                      关闭
+                    </Button>
+                  </Space>
+                }
+              >
+                <Table
+                  columns={matchResults.columns}
+                  dataSource={matchResults.data}
+                  loading={loading}
+                  pagination={{ pageSize: 50, showTotal: (total) => `共 ${total} 条` }}
+                  scroll={{ x: 'max-content', y: 500 }}
+                  rowKey={(record, index) => index}
+                  size="small"
+                  bordered
+                />
+              </Card>
             ) : (
               <Card style={{ textAlign: 'center', padding: '60px 0' }}>
                 <FileExcelOutlined style={{ fontSize: 64, color: '#d9d9d9', marginBottom: 16 }} />
@@ -451,6 +554,53 @@ function App() {
             </Select>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 多值选择弹窗 */}
+      <Modal
+        title="选择匹配值"
+        open={!!multiValueModal}
+        onOk={handleConfirmSelections}
+        onCancel={() => {
+          setMultiValueModal(null);
+          setPendingMatchParams(null);
+          setMultiValueSelections({});
+        }}
+        width={800}
+        okText="确认选择并匹配"
+        cancelText="取消"
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Tag color="orange">发现以下匹配项有多个可选值，请为每个选择一个</Tag>
+        </div>
+        <div style={{ maxHeight: 400, overflow: 'auto' }}>
+          {multiValueModal && Object.entries(multiValueModal).map(([key, options]) => (
+            <Card 
+              key={key} 
+              size="small" 
+              style={{ marginBottom: 12 }}
+              title={<span>匹配键: <Tag color="blue">{key}</Tag></span>}
+            >
+              <Select
+                style={{ width: '100%' }}
+                placeholder="请选择一个值"
+                value={multiValueSelections[key]}
+                onChange={(val) => setMultiValueSelections(prev => ({...prev, [key]: val}))}
+              >
+                {options.map((opt, idx) => (
+                  <Option key={idx} value={idx}>
+                    {Object.entries(opt).map(([k, v]) => `${k}: ${v}`).join(' | ')}
+                  </Option>
+                ))}
+              </Select>
+            </Card>
+          ))}
+        </div>
+        {multiValueModal && (
+          <div style={{ marginTop: 12, color: '#666' }}>
+            提示：未选择的项将使用第一个值
+          </div>
+        )}
       </Modal>
     </Layout>
   );

@@ -62,6 +62,7 @@ class MatchRequest(BaseModel):
     source_column: str
     target_table: str
     target_columns: List[str]
+    selections: Optional[dict] = None  # 用户选择的值 {key: selected_index}
 
 @app.get("/")
 async def root():
@@ -185,13 +186,53 @@ async def match_data(request: MatchRequest):
         merge_column = target_df.columns[0]
         
         # 准备匹配所需的列
-        target_subset = target_df[[merge_column] + request.target_columns].drop_duplicates()
+        target_subset = target_df[[merge_column] + request.target_columns].copy()
         
         # 将匹配列转换为字符串类型以避免类型不匹配问题
         source_df = source_df.copy()
-        target_subset = target_subset.copy()
         source_df[request.source_column] = source_df[request.source_column].astype(str).str.strip()
         target_subset[merge_column] = target_subset[merge_column].astype(str).str.strip()
+        
+        # 检测多值匹配情况
+        target_grouped = target_subset.groupby(merge_column)
+        multi_value_keys = {}
+        
+        for key, group in target_grouped:
+            if len(group) > 1:
+                # 该key有多个匹配值
+                options = group[request.target_columns].fillna("").to_dict(orient='records')
+                # 去重
+                unique_options = []
+                seen = set()
+                for opt in options:
+                    opt_tuple = tuple(sorted(opt.items()))
+                    if opt_tuple not in seen:
+                        seen.add(opt_tuple)
+                        unique_options.append(opt)
+                if len(unique_options) > 1:
+                    multi_value_keys[key] = unique_options
+        
+        # 如果有多值情况且用户未做选择，返回让用户选择
+        if multi_value_keys and not request.selections:
+            return {
+                "status": "need_selection",
+                "multi_value_keys": multi_value_keys,
+                "message": f"发现 {len(multi_value_keys)} 个匹配项有多个值，请选择"
+            }
+        
+        # 应用用户选择或使用第一个值
+        if request.selections:
+            # 根据用户选择构建唯一映射
+            for key, idx in request.selections.items():
+                if key in multi_value_keys:
+                    selected = multi_value_keys[key][int(idx)]
+                    # 移除其他值，只保留选择的
+                    mask = target_subset[merge_column] == key
+                    for col in request.target_columns:
+                        target_subset.loc[mask, col] = selected.get(col, "")
+        
+        # 去重后执行匹配
+        target_subset = target_subset.drop_duplicates(subset=[merge_column], keep='first')
         
         # 执行左连接
         result_df = source_df.merge(
@@ -205,6 +246,7 @@ async def match_data(request: MatchRequest):
         data = result_df.fillna("").to_dict(orient='records')
         
         return {
+            "status": "success",
             "source_table": request.source_table,
             "source_column": request.source_column,
             "target_table": request.target_table,
