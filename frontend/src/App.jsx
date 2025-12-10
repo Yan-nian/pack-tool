@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   Layout, Menu, Upload, Button, Table, Input, Select, message,
-  Card, Space, Tabs, Modal, Form, Tag, Spin, Divider, Drawer
+  Card, Space, Tabs, Modal, Form, Tag, Spin, Divider, Drawer, Checkbox, Popover
 } from 'antd';
 import {
   UploadOutlined, SearchOutlined, LinkOutlined,
   DeleteOutlined, ReloadOutlined, FileExcelOutlined,
   DownloadOutlined, CloseOutlined, PlusOutlined, MinusCircleOutlined,
-  BugOutlined, ClearOutlined
+  BugOutlined, ClearOutlined, SettingOutlined, EyeOutlined, EyeInvisibleOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
 import './App.css';
@@ -34,6 +34,11 @@ function App() {
   const [currentMatchIndex, setCurrentMatchIndex] = useState(null); // 当前选中的匹配结果索引
   const [logDrawerVisible, setLogDrawerVisible] = useState(false); // 日志抽屉
   const [logs, setLogs] = useState([]); // 日志列表
+  const [hiddenColumns, setHiddenColumns] = useState(() => {
+    // 从 localStorage 加载列配置
+    const saved = localStorage.getItem('excel-tool-hidden-columns');
+    return saved ? JSON.parse(saved) : {};
+  });
   const [form] = Form.useForm();
   
   // 监听表单字段变化用于联动
@@ -68,6 +73,41 @@ function App() {
     } catch (error) {
       message.error('清空日志失败');
     }
+  };
+
+  // 切换列显示/隐藏
+  const toggleColumnVisibility = (matchId, columnKey) => {
+    setHiddenColumns(prev => {
+      const matchHidden = prev[matchId] || [];
+      let newMatchHidden;
+      if (matchHidden.includes(columnKey)) {
+        newMatchHidden = matchHidden.filter(k => k !== columnKey);
+      } else {
+        newMatchHidden = [...matchHidden, columnKey];
+      }
+      const newHidden = { ...prev, [matchId]: newMatchHidden };
+      // 保存到 localStorage
+      localStorage.setItem('excel-tool-hidden-columns', JSON.stringify(newHidden));
+      return newHidden;
+    });
+  };
+
+  // 设置所有列显示/隐藏
+  const setAllColumnsVisibility = (matchId, allColumns, visible) => {
+    setHiddenColumns(prev => {
+      const newHidden = { 
+        ...prev, 
+        [matchId]: visible ? [] : allColumns.map(c => c.key) 
+      };
+      localStorage.setItem('excel-tool-hidden-columns', JSON.stringify(newHidden));
+      return newHidden;
+    });
+  };
+
+  // 获取过滤后的列
+  const getVisibleColumns = (matchId, allColumns) => {
+    const hidden = hiddenColumns[matchId] || [];
+    return allColumns.filter(col => !hidden.includes(col.key));
   };
 
   // 加载表列表
@@ -269,14 +309,18 @@ function App() {
     }
   };
 
-  // 导出匹配结果为Excel
+  // 导出匹配结果为Excel（只导出可见列）
   const handleExportMatch = async () => {
     if (!matchResults || !matchResults.data.length) return;
     
     try {
+      // 获取可见的列
+      const visibleCols = getVisibleColumns(matchResults.id, matchResults.columns);
+      const visibleColKeys = visibleCols.map(col => col.dataIndex);
+      
       const response = await axios.post('/export-excel', {
         data: matchResults.data,
-        columns: matchResults.columns.map(col => col.dataIndex),
+        columns: visibleColKeys,
         filename: `匹配结果_${matchResults.name || matchResults.sourceTable}`
       }, {
         responseType: 'blob'
@@ -554,10 +598,76 @@ function App() {
                     <span>匹配结果</span>
                     <Tag color="green">{matchResults.name}</Tag>
                     <Tag color="blue">{matchResults.total} 条数据</Tag>
+                    <Tag color="purple">
+                      显示 {getVisibleColumns(matchResults.id, matchResults.columns).length} / {matchResults.columns.length} 列
+                    </Tag>
                   </Space>
                 }
                 extra={
                   <Space>
+                    <Popover
+                      title={
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span>选择显示的列</span>
+                          <Space size="small">
+                            <Button 
+                              size="small" 
+                              type="link"
+                              onClick={() => setAllColumnsVisibility(matchResults.id, matchResults.columns, true)}
+                            >
+                              全选
+                            </Button>
+                            <Button 
+                              size="small" 
+                              type="link"
+                              onClick={() => setAllColumnsVisibility(matchResults.id, matchResults.columns, false)}
+                            >
+                              全不选
+                            </Button>
+                          </Space>
+                        </div>
+                      }
+                      content={
+                        <div style={{ maxHeight: 400, overflow: 'auto', width: 280 }}>
+                          {matchResults.columns.map(col => {
+                            const isHidden = (hiddenColumns[matchResults.id] || []).includes(col.key);
+                            return (
+                              <div 
+                                key={col.key} 
+                                style={{ 
+                                  padding: '6px 0', 
+                                  borderBottom: '1px solid #f0f0f0',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between'
+                                }}
+                              >
+                                <Checkbox
+                                  checked={!isHidden}
+                                  onChange={() => toggleColumnVisibility(matchResults.id, col.key)}
+                                >
+                                  <span style={{ 
+                                    maxWidth: 200, 
+                                    overflow: 'hidden', 
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    display: 'inline-block'
+                                  }} title={col.title}>
+                                    {col.title}
+                                  </span>
+                                </Checkbox>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      }
+                      trigger="click"
+                      placement="bottomRight"
+                    >
+                      <Button icon={<SettingOutlined />}>
+                        列设置
+                      </Button>
+                    </Popover>
                     <Button
                       type="primary"
                       icon={<DownloadOutlined />}
@@ -575,7 +685,7 @@ function App() {
                 }
               >
                 <Table
-                  columns={matchResults.columns}
+                  columns={getVisibleColumns(matchResults.id, matchResults.columns)}
                   dataSource={matchResults.data}
                   loading={loading}
                   pagination={{ pageSize: 50, showTotal: (total) => `共 ${total} 条` }}
