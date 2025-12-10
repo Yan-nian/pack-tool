@@ -257,8 +257,6 @@ function App() {
       message.error('导出失败: ' + error.message);
     }
   };
-    message.success('导出成功');
-  };
 
   // 删除表
   const handleDeleteTable = async (tableName) => {
