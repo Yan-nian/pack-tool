@@ -1,41 +1,41 @@
-FROM python:3.11-slim as backend-builder
+# Stage 1: 构建前端
+FROM node:18 as frontend-builder
 
-WORKDIR /app/backend
+WORKDIR /app
 
-# 安装 Python 依赖
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# 复制后端代码
-COPY backend/main.py .
-
-
-FROM node:18-alpine as frontend-builder
+# 复制前端文件
+COPY frontend/package.json frontend/package.json
+COPY frontend/public frontend/public
+COPY frontend/src frontend/src
 
 WORKDIR /app/frontend
-
-# 复制前端项目文件
-COPY frontend/package.json ./
-COPY frontend/public ./public
-COPY frontend/src ./src
 
 # 设置环境变量
 ENV REACT_APP_API_URL=/api
 ENV CI=true
 ENV GENERATE_SOURCEMAP=false
-ENV NODE_ENV=production
 
-# 安装依赖并构建
-RUN npm install --legacy-peer-deps && \
+# 清理 npm 缓存并安装依赖
+RUN npm cache clean --force && \
+    npm install --legacy-peer-deps && \
     npm run build
 
+# Stage 2: Python 后端基础
+FROM python:3.11-slim as backend-builder
 
-# 最终镜像
+WORKDIR /app
+
+# 安装 Python 依赖
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+
+# Stage 3: 最终镜像
 FROM python:3.11-slim
 
-# 安装 nginx
+# 安装 nginx 和必要工具
 RUN apt-get update && \
-    apt-get install -y nginx && \
+    apt-get install -y nginx procps && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
