@@ -424,7 +424,10 @@ function App() {
                   <Space>
                     <Button
                       icon={<LinkOutlined />}
-                      onClick={() => setMatchModalVisible(true)}
+                      onClick={() => {
+                        form.setFieldsValue({ targets: [{}] });
+                        setMatchModalVisible(true);
+                      }}
                       disabled={tables.length < 2}
                     >
                       数据匹配
@@ -547,11 +550,25 @@ function App() {
               <Card style={{ textAlign: 'center', padding: '60px 0' }}>
                 <FileExcelOutlined style={{ fontSize: 64, color: '#d9d9d9', marginBottom: 16 }} />
                 <h2 style={{ color: '#999' }}>请上传Excel文件或选择已上传的表</h2>
-                <Upload beforeUpload={handleUpload} showUploadList={false} accept=".xlsx,.xls">
-                  <Button type="primary" icon={<UploadOutlined />} size="large">
-                    上传 Excel 文件
-                  </Button>
-                </Upload>
+                <Space size="large">
+                  <Upload beforeUpload={handleUpload} showUploadList={false} accept=".xlsx,.xls">
+                    <Button type="primary" icon={<UploadOutlined />} size="large">
+                      上传 Excel 文件
+                    </Button>
+                  </Upload>
+                  {tables.length >= 2 && (
+                    <Button 
+                      icon={<LinkOutlined />} 
+                      size="large"
+                      onClick={() => {
+                        form.setFieldsValue({ targets: [{}] });
+                        setMatchModalVisible(true);
+                      }}
+                    >
+                      数据匹配
+                    </Button>
+                  )}
+                </Space>
               </Card>
             )}
           </Content>
