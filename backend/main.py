@@ -5,9 +5,17 @@ from typing import List, Optional
 import pandas as pd
 import io
 import os
+import pickle
 from pydantic import BaseModel
 
 app = FastAPI(title="Excel Tool API")
+
+# 数据持久化目录
+DATA_DIR = os.environ.get('DATA_DIR', '/app/data')
+DATA_FILE = os.path.join(DATA_DIR, 'excel_data.pkl')
+
+# 确保数据目录存在
+os.makedirs(DATA_DIR, exist_ok=True)
 
 # CORS配置
 app.add_middleware(
@@ -20,6 +28,29 @@ app.add_middleware(
 
 # 存储上传的Excel数据
 excel_data = {}
+
+def save_data():
+    """保存数据到文件"""
+    try:
+        with open(DATA_FILE, 'wb') as f:
+            pickle.dump(excel_data, f)
+    except Exception as e:
+        print(f"保存数据失败: {e}")
+
+def load_data():
+    """从文件加载数据"""
+    global excel_data
+    try:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'rb') as f:
+                excel_data = pickle.load(f)
+            print(f"已加载 {len(excel_data)} 个表")
+    except Exception as e:
+        print(f"加载数据失败: {e}")
+        excel_data = {}
+
+# 启动时加载数据
+load_data()
 
 class SearchRequest(BaseModel):
     table_name: str
@@ -49,6 +80,9 @@ async def upload_file(file: UploadFile = File(...)):
         # 存储数据
         table_name = file.filename.replace('.xlsx', '').replace('.xls', '')
         excel_data[table_name] = df
+        
+        # 保存到文件
+        save_data()
         
         return {
             "message": "文件上传成功",
@@ -183,6 +217,10 @@ async def delete_table(table_name: str):
         raise HTTPException(status_code=404, detail="表不存在")
     
     del excel_data[table_name]
+    
+    # 保存到文件
+    save_data()
+    
     return {"message": f"表 '{table_name}' 已删除"}
 
 if __name__ == "__main__":
