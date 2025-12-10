@@ -14,10 +14,10 @@ WORKDIR /app/frontend
 ENV REACT_APP_API_URL=/api
 ENV CI=true
 ENV GENERATE_SOURCEMAP=false
+ENV NODE_OPTIONS=--openssl-legacy-provider
 
-# 清理 npm 缓存并安装依赖
-RUN npm cache clean --force && \
-    npm install --legacy-peer-deps && \
+# 安装依赖并构建
+RUN npm install --force && \
     npm run build
 
 # Stage 2: Python 后端基础
