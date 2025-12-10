@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   Layout, Menu, Upload, Button, Table, Input, Select, message,
-  Card, Space, Tabs, Modal, Form, Tag, Spin
+  Card, Space, Tabs, Modal, Form, Tag, Spin, Divider
 } from 'antd';
 import {
   UploadOutlined, SearchOutlined, LinkOutlined,
   DeleteOutlined, ReloadOutlined, FileExcelOutlined,
-  DownloadOutlined, CloseOutlined
+  DownloadOutlined, CloseOutlined, PlusOutlined, MinusCircleOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
 import './App.css';
@@ -146,22 +146,27 @@ function App() {
     }
   };
 
-  // 匹配数据
+  // 匹配数据（支持多表）
   const handleMatch = async (values, selections = null) => {
     setLoading(true);
     try {
+      // 构建多表匹配参数
+      const targets = values.targets.map(t => ({
+        target_table: t.targetTable,
+        target_columns: t.targetColumns
+      }));
+      
       const params = {
         source_table: values.sourceTable,
         source_column: values.sourceColumn,
-        target_table: values.targetTable,
-        target_columns: values.targetColumns
+        targets: targets
       };
       
       if (selections) {
         params.selections = selections;
       }
       
-      const response = await axios.post('/match', params);
+      const response = await axios.post('/multi-match', params);
       
       // 检查是否需要用户选择
       if (response.data.status === 'need_selection') {
@@ -183,14 +188,17 @@ function App() {
         fixed: index === 0 ? 'left' : undefined
       }));
       
+      // 生成名称
+      const targetNames = targets.map(t => t.target_table).join(', ');
+      
       // 创建新的匹配结果
       const newMatchResult = {
         id: Date.now(),
-        name: `${values.sourceTable} → ${values.targetTable}`,
+        name: `${values.sourceTable} → ${targetNames}`,
         data: matchData,
         columns: matchCols,
         sourceTable: values.sourceTable,
-        targetTable: values.targetTable,
+        targetTables: targets.map(t => t.target_table),
         total: response.data.total,
         time: new Date().toLocaleTimeString()
       };
@@ -224,30 +232,30 @@ function App() {
     }
   };
 
-  // 导出匹配结果为CSV
-  const handleExportMatch = () => {
+  // 导出匹配结果为Excel
+  const handleExportMatch = async () => {
     if (!matchResults || !matchResults.data.length) return;
     
-    const headers = matchResults.columns.map(col => col.title);
-    const rows = matchResults.data.map(row => 
-      matchResults.columns.map(col => {
-        const val = row[col.dataIndex];
-        // 处理包含逗号或引号的值
-        if (typeof val === 'string' && (val.includes(',') || val.includes('"'))) {
-          return `"${val.replace(/"/g, '""')}"`;
-        }
-        return val ?? '';
-      }).join(',')
-    );
-    
-    const csv = '\uFEFF' + [headers.join(','), ...rows].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `匹配结果_${matchResults.sourceTable}_${matchResults.targetTable}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    try {
+      const response = await axios.post('/export-excel', {
+        data: matchResults.data,
+        columns: matchResults.columns.map(col => col.dataIndex),
+        filename: `匹配结果_${matchResults.name || matchResults.sourceTable}`
+      }, {
+        responseType: 'blob'
+      });
+      
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `匹配结果_${matchResults.name || matchResults.sourceTable}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+      message.success('导出成功');
+    } catch (error) {
+      message.error('导出失败: ' + error.message);
+    }
+  };
     message.success('导出成功');
   };
 
@@ -498,7 +506,7 @@ function App() {
                 title={
                   <Space>
                     <span>匹配结果</span>
-                    <Tag color="green">{matchResults.sourceTable} → {matchResults.targetTable}</Tag>
+                    <Tag color="green">{matchResults.name}</Tag>
                     <Tag color="blue">{matchResults.total} 条数据</Tag>
                   </Space>
                 }
@@ -509,7 +517,7 @@ function App() {
                       icon={<DownloadOutlined />}
                       onClick={handleExportMatch}
                     >
-                      导出CSV
+                      导出Excel
                     </Button>
                     <Button
                       icon={<CloseOutlined />}
@@ -554,7 +562,7 @@ function App() {
           setMatchModalVisible(false);
           form.resetFields();
         }}
-        width={600}
+        width={700}
         okText="开始匹配"
         cancelText="取消"
       >
@@ -562,6 +570,7 @@ function App() {
           form={form}
           layout="vertical"
           onFinish={handleMatch}
+          initialValues={{ targets: [{}] }}
         >
           <Form.Item
             name="sourceTable"
@@ -579,7 +588,7 @@ function App() {
           
           <Form.Item
             name="sourceColumn"
-            label="源表匹配列"
+            label="源表匹配列（用于匹配目标表第一列）"
             rules={[{ required: true, message: '请选择源表匹配列' }]}
           >
             <Select placeholder="选择要匹配的列">
@@ -591,33 +600,79 @@ function App() {
             </Select>
           </Form.Item>
           
-          <Form.Item
-            name="targetTable"
-            label="目标表"
-            rules={[{ required: true, message: '请选择目标表' }]}
-          >
-            <Select placeholder="选择目标表">
-              {tables.map(table => (
-                <Option key={table.name} value={table.name}>
-                  {table.name}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
+          <Divider>目标表配置（可添加多个）</Divider>
           
-          <Form.Item
-            name="targetColumns"
-            label="目标表要获取的列"
-            rules={[{ required: true, message: '请选择要获取的列' }]}
-          >
-            <Select mode="multiple" placeholder="选择要获取的列（可多选）">
-              {targetTableColumns.map(col => (
-                <Option key={col} value={col}>
-                  {col}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
+          <Form.List name="targets">
+            {(fields, { add, remove }) => (
+              <>
+                {fields.map(({ key, name, ...restField }, index) => {
+                  const targetTableValue = form.getFieldValue(['targets', name, 'targetTable']);
+                  const targetCols = tables.find(t => t.name === targetTableValue)?.columns || [];
+                  
+                  return (
+                    <Card 
+                      key={key} 
+                      size="small" 
+                      style={{ marginBottom: 12 }}
+                      title={`目标表 ${index + 1}`}
+                      extra={fields.length > 1 && (
+                        <MinusCircleOutlined 
+                          onClick={() => remove(name)} 
+                          style={{ color: '#ff4d4f' }}
+                        />
+                      )}
+                    >
+                      <Form.Item
+                        {...restField}
+                        name={[name, 'targetTable']}
+                        label="目标表"
+                        rules={[{ required: true, message: '请选择目标表' }]}
+                      >
+                        <Select 
+                          placeholder="选择目标表"
+                          onChange={() => {
+                            // 清空已选列
+                            form.setFieldValue(['targets', name, 'targetColumns'], []);
+                          }}
+                        >
+                          {tables.map(table => (
+                            <Option key={table.name} value={table.name}>
+                              {table.name}
+                            </Option>
+                          ))}
+                        </Select>
+                      </Form.Item>
+                      
+                      <Form.Item
+                        {...restField}
+                        name={[name, 'targetColumns']}
+                        label="要获取的列"
+                        rules={[{ required: true, message: '请选择要获取的列' }]}
+                      >
+                        <Select mode="multiple" placeholder="选择要获取的列（可多选）">
+                          {targetCols.map(col => (
+                            <Option key={col} value={col}>
+                              {col}
+                            </Option>
+                          ))}
+                        </Select>
+                      </Form.Item>
+                    </Card>
+                  );
+                })}
+                <Form.Item>
+                  <Button 
+                    type="dashed" 
+                    onClick={() => add()} 
+                    block 
+                    icon={<PlusOutlined />}
+                  >
+                    添加目标表
+                  </Button>
+                </Form.Item>
+              </>
+            )}
+          </Form.List>
         </Form>
       </Modal>
 
@@ -639,26 +694,34 @@ function App() {
           <Tag color="orange">发现以下匹配项有多个可选值，请为每个选择一个</Tag>
         </div>
         <div style={{ maxHeight: 400, overflow: 'auto' }}>
-          {multiValueModal && Object.entries(multiValueModal).map(([key, options]) => (
-            <Card 
-              key={key} 
-              size="small" 
-              style={{ marginBottom: 12 }}
-              title={<span>匹配键: <Tag color="blue">{key}</Tag></span>}
-            >
-              <Select
-                style={{ width: '100%' }}
-                placeholder="请选择一个值"
-                value={multiValueSelections[key]}
-                onChange={(val) => setMultiValueSelections(prev => ({...prev, [key]: val}))}
-              >
-                {options.map((opt, idx) => (
-                  <Option key={idx} value={idx}>
-                    {Object.entries(opt).map(([k, v]) => `${k}: ${v}`).join(' | ')}
-                  </Option>
-                ))}
-              </Select>
-            </Card>
+          {multiValueModal && Object.entries(multiValueModal).map(([tableName, tableKeys]) => (
+            <div key={tableName}>
+              <Divider orientation="left">{tableName}</Divider>
+              {Object.entries(tableKeys).map(([key, options]) => (
+                <Card 
+                  key={`${tableName}_${key}`} 
+                  size="small" 
+                  style={{ marginBottom: 12 }}
+                  title={<span>匹配键: <Tag color="blue">{key}</Tag></span>}
+                >
+                  <Select
+                    style={{ width: '100%' }}
+                    placeholder="请选择一个值"
+                    value={multiValueSelections[tableName]?.[key]}
+                    onChange={(val) => setMultiValueSelections(prev => ({
+                      ...prev, 
+                      [tableName]: { ...(prev[tableName] || {}), [key]: val }
+                    }))}
+                  >
+                    {options.map((opt, idx) => (
+                      <Option key={idx} value={idx}>
+                        {Object.entries(opt).map(([k, v]) => `${k}: ${v}`).join(' | ')}
+                      </Option>
+                    ))}
+                  </Select>
+                </Card>
+              ))}
+            </div>
           ))}
         </div>
         {multiValueModal && (

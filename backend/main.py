@@ -1,7 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from typing import List, Optional
+from fastapi.responses import JSONResponse, StreamingResponse
+from typing import List, Optional, Dict
 import pandas as pd
 import io
 import os
@@ -63,6 +63,21 @@ class MatchRequest(BaseModel):
     target_table: str
     target_columns: List[str]
     selections: Optional[dict] = None  # 用户选择的值 {key: selected_index}
+
+class MultiMatchTarget(BaseModel):
+    target_table: str
+    target_columns: List[str]
+
+class MultiMatchRequest(BaseModel):
+    source_table: str
+    source_column: str
+    targets: List[MultiMatchTarget]  # 多个目标表
+    selections: Optional[Dict[str, dict]] = None  # {target_table: {key: selected_index}}
+
+class ExportRequest(BaseModel):
+    data: List[dict]
+    columns: List[str]
+    filename: Optional[str] = "匹配结果"
 
 @app.get("/")
 async def root():
@@ -257,6 +272,123 @@ async def match_data(request: MatchRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"匹配失败: {str(e)}")
+
+@app.post("/multi-match")
+async def multi_match_data(request: MultiMatchRequest):
+    """匹配多个目标表"""
+    if request.source_table not in excel_data:
+        raise HTTPException(status_code=404, detail=f"源表 '{request.source_table}' 不存在")
+    
+    source_df = excel_data[request.source_table].copy()
+    source_df[request.source_column] = source_df[request.source_column].astype(str).str.strip()
+    
+    all_multi_value_keys = {}
+    
+    try:
+        for target in request.targets:
+            if target.target_table not in excel_data:
+                raise HTTPException(status_code=404, detail=f"目标表 '{target.target_table}' 不存在")
+            
+            target_df = excel_data[target.target_table]
+            merge_column = target_df.columns[0]
+            
+            # 准备目标列
+            target_subset = target_df[[merge_column] + target.target_columns].copy()
+            target_subset[merge_column] = target_subset[merge_column].astype(str).str.strip()
+            
+            # 检测多值情况
+            target_grouped = target_subset.groupby(merge_column)
+            for key, group in target_grouped:
+                if len(group) > 1:
+                    options = group[target.target_columns].fillna("").to_dict(orient='records')
+                    unique_options = []
+                    seen = set()
+                    for opt in options:
+                        opt_tuple = tuple(sorted(opt.items()))
+                        if opt_tuple not in seen:
+                            seen.add(opt_tuple)
+                            unique_options.append(opt)
+                    if len(unique_options) > 1:
+                        if target.target_table not in all_multi_value_keys:
+                            all_multi_value_keys[target.target_table] = {}
+                        all_multi_value_keys[target.target_table][key] = unique_options
+            
+            # 如果有多值且无选择，返回让用户选择
+            if all_multi_value_keys and not request.selections:
+                return {
+                    "status": "need_selection",
+                    "multi_value_keys": all_multi_value_keys,
+                    "message": f"发现多个匹配项有多个值，请选择"
+                }
+            
+            # 应用用户选择
+            if request.selections and target.target_table in request.selections:
+                for key, idx in request.selections[target.target_table].items():
+                    if target.target_table in all_multi_value_keys and key in all_multi_value_keys[target.target_table]:
+                        selected = all_multi_value_keys[target.target_table][key][int(idx)]
+                        mask = target_subset[merge_column] == key
+                        for col in target.target_columns:
+                            target_subset.loc[mask, col] = selected.get(col, "")
+            
+            # 去重
+            target_subset = target_subset.drop_duplicates(subset=[merge_column], keep='first')
+            
+            # 重命名列避免冲突
+            rename_map = {col: f"{col}({target.target_table})" for col in target.target_columns}
+            target_subset = target_subset.rename(columns=rename_map)
+            
+            # 执行左连接
+            source_df = source_df.merge(
+                target_subset,
+                left_on=request.source_column,
+                right_on=merge_column,
+                how='left',
+                suffixes=('', '_dup')
+            )
+            
+            # 删除重复的合并列
+            if merge_column in source_df.columns and merge_column != request.source_column:
+                source_df = source_df.drop(columns=[merge_column])
+        
+        data = source_df.fillna("").to_dict(orient='records')
+        
+        return {
+            "status": "success",
+            "source_table": request.source_table,
+            "source_column": request.source_column,
+            "targets": [{"target_table": t.target_table, "target_columns": t.target_columns} for t in request.targets],
+            "total": len(data),
+            "data": data,
+            "columns": list(source_df.columns)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"匹配失败: {str(e)}")
+
+@app.post("/export-excel")
+async def export_excel(request: ExportRequest):
+    """导出为Excel文件"""
+    try:
+        df = pd.DataFrame(request.data)
+        
+        # 按照指定列顺序
+        if request.columns:
+            df = df[[col for col in request.columns if col in df.columns]]
+        
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='匹配结果')
+        
+        output.seek(0)
+        
+        filename = f"{request.filename}.xlsx"
+        
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
 
 @app.delete("/table/{table_name}")
 async def delete_table(table_name: str):
