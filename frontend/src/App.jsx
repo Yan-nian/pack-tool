@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   Layout, Menu, Upload, Button, Table, Input, Select, message,
-  Card, Space, Tabs, Modal, Form, Tag, Spin, Divider
+  Card, Space, Tabs, Modal, Form, Tag, Spin, Divider, Drawer
 } from 'antd';
 import {
   UploadOutlined, SearchOutlined, LinkOutlined,
   DeleteOutlined, ReloadOutlined, FileExcelOutlined,
-  DownloadOutlined, CloseOutlined, PlusOutlined, MinusCircleOutlined
+  DownloadOutlined, CloseOutlined, PlusOutlined, MinusCircleOutlined,
+  BugOutlined, ClearOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
 import './App.css';
@@ -31,6 +32,8 @@ function App() {
   const [matchResults, setMatchResults] = useState(null); // 当前显示的匹配结果
   const [matchHistory, setMatchHistory] = useState([]); // 匹配结果历史列表
   const [currentMatchIndex, setCurrentMatchIndex] = useState(null); // 当前选中的匹配结果索引
+  const [logDrawerVisible, setLogDrawerVisible] = useState(false); // 日志抽屉
+  const [logs, setLogs] = useState([]); // 日志列表
   const [form] = Form.useForm();
   
   // 监听表单字段变化用于联动
@@ -44,6 +47,27 @@ function App() {
   const getTargetTableColumns = (index) => {
     const targetTable = targetsValue?.[index]?.targetTable;
     return tables.find(t => t.name === targetTable)?.columns || [];
+  };
+
+  // 加载日志
+  const loadLogs = async () => {
+    try {
+      const response = await axios.get('/logs?limit=500');
+      setLogs(response.data.logs || []);
+    } catch (error) {
+      console.error('加载日志失败:', error);
+    }
+  };
+
+  // 清空日志
+  const clearLogs = async () => {
+    try {
+      await axios.delete('/logs');
+      setLogs([]);
+      message.success('日志已清空');
+    } catch (error) {
+      message.error('清空日志失败');
+    }
   };
 
   // 加载表列表
@@ -315,11 +339,19 @@ function App() {
             <FileExcelOutlined style={{ fontSize: 28, color: '#1890ff', marginRight: 12 }} />
             <h1 style={{ color: 'white', margin: 0, fontSize: 20 }}>Excel 数据工具</h1>
           </div>
-          <Upload beforeUpload={handleUpload} showUploadList={false} accept=".xlsx,.xls">
-            <Button type="primary" icon={<UploadOutlined />} loading={loading}>
-              上传 Excel
+          <Space>
+            <Button 
+              icon={<BugOutlined />} 
+              onClick={() => { loadLogs(); setLogDrawerVisible(true); }}
+            >
+              日志
             </Button>
-          </Upload>
+            <Upload beforeUpload={handleUpload} showUploadList={false} accept=".xlsx,.xls">
+              <Button type="primary" icon={<UploadOutlined />} loading={loading}>
+                上传 Excel
+              </Button>
+            </Upload>
+          </Space>
         </div>
       </Header>
       
@@ -769,6 +801,58 @@ function App() {
           </Form.List>
         </Form>
       </Modal>
+
+      {/* 日志抽屉 */}
+      <Drawer
+        title={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>🔧 系统日志</span>
+            <Space>
+              <Button size="small" icon={<ReloadOutlined />} onClick={loadLogs}>
+                刷新
+              </Button>
+              <Button size="small" icon={<ClearOutlined />} danger onClick={clearLogs}>
+                清空
+              </Button>
+            </Space>
+          </div>
+        }
+        placement="right"
+        width={700}
+        open={logDrawerVisible}
+        onClose={() => setLogDrawerVisible(false)}
+      >
+        <div style={{ 
+          background: '#1e1e1e', 
+          color: '#d4d4d4', 
+          padding: 16, 
+          borderRadius: 4,
+          fontFamily: 'Consolas, Monaco, monospace',
+          fontSize: 12,
+          lineHeight: 1.6,
+          maxHeight: 'calc(100vh - 150px)',
+          overflow: 'auto'
+        }}>
+          {logs.length === 0 ? (
+            <div style={{ color: '#888', textAlign: 'center', padding: 40 }}>
+              暂无日志
+            </div>
+          ) : (
+            logs.map((log, index) => (
+              <div 
+                key={index} 
+                style={{ 
+                  marginBottom: 4,
+                  color: log.includes('[ERROR]') ? '#f44747' : 
+                         log.includes('[WARN]') ? '#dcdcaa' : '#d4d4d4'
+                }}
+              >
+                {log}
+              </div>
+            ))
+          )}
+        </div>
+      </Drawer>
     </Layout>
   );
 }

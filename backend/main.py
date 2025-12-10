@@ -7,8 +7,20 @@ import io
 import os
 import pickle
 from pydantic import BaseModel
+from datetime import datetime
+from collections import deque
 
 app = FastAPI(title="Excel Tool API")
+
+# 日志存储（最多保留1000条）
+log_buffer = deque(maxlen=1000)
+
+def log(message: str, level: str = "INFO"):
+    """添加日志"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = f"[{timestamp}] [{level}] {message}"
+    log_buffer.append(log_entry)
+    print(log_entry)  # 同时打印到控制台
 
 # 数据持久化目录
 DATA_DIR = os.environ.get('DATA_DIR', '/app/data')
@@ -35,7 +47,7 @@ def save_data():
         with open(DATA_FILE, 'wb') as f:
             pickle.dump(excel_data, f)
     except Exception as e:
-        print(f"保存数据失败: {e}")
+        log(f"保存数据失败: {e}", "ERROR")
 
 def load_data():
     """从文件加载数据"""
@@ -44,9 +56,9 @@ def load_data():
         if os.path.exists(DATA_FILE):
             with open(DATA_FILE, 'rb') as f:
                 excel_data = pickle.load(f)
-            print(f"已加载 {len(excel_data)} 个表")
+            log(f"已加载 {len(excel_data)} 个表")
     except Exception as e:
-        print(f"加载数据失败: {e}")
+        log(f"加载数据失败: {e}", "ERROR")
         excel_data = {}
 
 # 启动时加载数据
@@ -87,6 +99,19 @@ class ExportRequest(BaseModel):
 @app.get("/")
 async def root():
     return {"message": "Excel Tool API is running"}
+
+@app.get("/logs")
+async def get_logs(limit: int = 100):
+    """获取最近的日志"""
+    logs = list(log_buffer)[-limit:]
+    return {"logs": logs, "total": len(log_buffer)}
+
+@app.delete("/logs")
+async def clear_logs():
+    """清空日志"""
+    log_buffer.clear()
+    log("日志已清空")
+    return {"message": "日志已清空"}
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
@@ -281,10 +306,10 @@ async def match_data(request: MatchRequest):
 @app.post("/multi-match")
 async def multi_match_data(request: MultiMatchRequest):
     """匹配多个目标表，保留所有匹配结果（一对多匹配会生成多行）"""
-    print(f"收到匹配请求: source_table={request.source_table}, source_column={request.source_column}")
-    print(f"目标表数量: {len(request.targets)}")
+    log(f"收到匹配请求: source_table={request.source_table}, source_column={request.source_column}")
+    log(f"目标表数量: {len(request.targets)}")
     for i, t in enumerate(request.targets):
-        print(f"  目标表{i+1}: table={t.target_table}, match_col={t.target_match_column}, columns={t.target_columns}, conditions={t.conditions}")
+        log(f"  目标表{i+1}: table={t.target_table}, match_col={t.target_match_column}, columns={t.target_columns}, conditions={t.conditions}")
     
     if request.source_table not in excel_data:
         raise HTTPException(status_code=404, detail=f"源表 '{request.source_table}' 不存在")
@@ -308,7 +333,7 @@ async def multi_match_data(request: MultiMatchRequest):
             if merge_column not in target_df.columns:
                 raise HTTPException(status_code=400, detail=f"目标表 '{target.target_table}' 中不存在列 '{merge_column}'")
             
-            print(f"  匹配列: 源表[{request.source_column}] <-> 目标表[{merge_column}]")
+            log(f"  匹配列: 源表[{request.source_column}] <-> 目标表[{merge_column}]")
             
             # 收集所有需要的列（包括限制条件列）
             needed_cols = [merge_column] + target.target_columns
@@ -340,6 +365,20 @@ async def multi_match_data(request: MultiMatchRequest):
                     merge_keys_source.append(cond.source_col)
                     merge_keys_target.append(cond.target_col)
             
+            # 调试：打印源表和目标表匹配列的部分值
+            log(f"  源表匹配列[{request.source_column}]的前5个值: {source_df[request.source_column].head().tolist()}")
+            log(f"  目标表匹配列[{merge_column}]的前5个值: {target_subset[merge_column].head().tolist()}")
+            
+            # 检查有多少值是匹配的
+            source_values = set(source_df[request.source_column].unique())
+            target_values = set(target_subset[merge_column].unique())
+            common_values = source_values & target_values
+            log(f"  源表唯一值数: {len(source_values)}, 目标表唯一值数: {len(target_values)}, 共同值数: {len(common_values)}")
+            if len(common_values) > 0:
+                log(f"  共同值示例: {list(common_values)[:5]}")
+            else:
+                log(f"  警告: 没有共同值！匹配将为空", "WARN")
+            
             # 不再去重，保留所有匹配值（一对多匹配会生成多行）
             # 只保留需要的目标列用于合并
             cols_to_keep = merge_keys_target + target.target_columns
@@ -367,8 +406,8 @@ async def multi_match_data(request: MultiMatchRequest):
                 if dup_col in source_df.columns:
                     source_df = source_df.drop(columns=[dup_col])
         
-        print(f"匹配完成，结果列: {list(source_df.columns)}")
-        print(f"结果行数: {len(source_df)}")
+        log(f"匹配完成，结果列: {list(source_df.columns)}")
+        log(f"结果行数: {len(source_df)}")
         
         data = source_df.fillna("").to_dict(orient='records')
         
