@@ -31,9 +31,6 @@ function App() {
   const [matchResults, setMatchResults] = useState(null); // 当前显示的匹配结果
   const [matchHistory, setMatchHistory] = useState([]); // 匹配结果历史列表
   const [currentMatchIndex, setCurrentMatchIndex] = useState(null); // 当前选中的匹配结果索引
-  const [multiValueModal, setMultiValueModal] = useState(null); // 多值选择弹窗
-  const [multiValueSelections, setMultiValueSelections] = useState({}); // 用户选择
-  const [pendingMatchParams, setPendingMatchParams] = useState(null); // 待处理的匹配参数
   const [form] = Form.useForm();
   
   // 监听表单字段变化用于联动
@@ -152,7 +149,7 @@ function App() {
   };
 
   // 匹配数据（支持多表）
-  const handleMatch = async (values, selections = null) => {
+  const handleMatch = async (values) => {
     console.log('handleMatch called with values:', values);
     
     // 验证必要字段
@@ -191,24 +188,10 @@ function App() {
         targets: targets
       };
       
-      if (selections) {
-        params.selections = selections;
-      }
-      
       console.log('Sending multi-match request with params:', params);
       
       const response = await axios.post('/multi-match', params);
       console.log('Multi-match response:', response.data);
-      
-      // 检查是否需要用户选择
-      if (response.data.status === 'need_selection') {
-        setPendingMatchParams(values);
-        setMultiValueModal(response.data.multi_value_keys);
-        setMultiValueSelections({});
-        setMatchModalVisible(false);
-        message.info(response.data.message);
-        return;
-      }
       
       const matchData = response.data.data;
       const matchCols = response.data.columns.map((col, index) => ({
@@ -252,15 +235,6 @@ function App() {
       message.error('匹配失败: ' + (error.response?.data?.detail || error.message));
     } finally {
       setLoading(false);
-    }
-  };
-
-  // 确认多值选择
-  const handleConfirmSelections = () => {
-    if (pendingMatchParams) {
-      handleMatch(pendingMatchParams, multiValueSelections);
-      setMultiValueModal(null);
-      setPendingMatchParams(null);
     }
   };
 
@@ -787,61 +761,6 @@ function App() {
             )}
           </Form.List>
         </Form>
-      </Modal>
-
-      {/* 多值选择弹窗 */}
-      <Modal
-        title="选择匹配值"
-        open={!!multiValueModal}
-        onOk={handleConfirmSelections}
-        onCancel={() => {
-          setMultiValueModal(null);
-          setPendingMatchParams(null);
-          setMultiValueSelections({});
-        }}
-        width={800}
-        okText="确认选择并匹配"
-        cancelText="取消"
-      >
-        <div style={{ marginBottom: 16 }}>
-          <Tag color="orange">发现以下匹配项有多个可选值，请为每个选择一个</Tag>
-        </div>
-        <div style={{ maxHeight: 400, overflow: 'auto' }}>
-          {multiValueModal && Object.entries(multiValueModal).map(([tableName, tableKeys]) => (
-            <div key={tableName}>
-              <Divider orientation="left">{tableName}</Divider>
-              {Object.entries(tableKeys).map(([key, options]) => (
-                <Card 
-                  key={`${tableName}_${key}`} 
-                  size="small" 
-                  style={{ marginBottom: 12 }}
-                  title={<span>匹配键: <Tag color="blue">{key}</Tag></span>}
-                >
-                  <Select
-                    style={{ width: '100%' }}
-                    placeholder="请选择一个值"
-                    value={multiValueSelections[tableName]?.[key]}
-                    onChange={(val) => setMultiValueSelections(prev => ({
-                      ...prev, 
-                      [tableName]: { ...(prev[tableName] || {}), [key]: val }
-                    }))}
-                  >
-                    {options.map((opt, idx) => (
-                      <Option key={idx} value={idx}>
-                        {Object.entries(opt).map(([k, v]) => `${k}: ${v}`).join(' | ')}
-                      </Option>
-                    ))}
-                  </Select>
-                </Card>
-              ))}
-            </div>
-          ))}
-        </div>
-        {multiValueModal && (
-          <div style={{ marginTop: 12, color: '#666' }}>
-            提示：未选择的项将使用第一个值
-          </div>
-        )}
       </Modal>
     </Layout>
   );

@@ -78,7 +78,6 @@ class MultiMatchRequest(BaseModel):
     source_table: str
     source_column: str
     targets: List[MultiMatchTarget]  # 多个目标表
-    selections: Optional[Dict[str, dict]] = None  # {target_table: {key: selected_index}}
 
 class ExportRequest(BaseModel):
     data: List[dict]
@@ -281,11 +280,11 @@ async def match_data(request: MatchRequest):
 
 @app.post("/multi-match")
 async def multi_match_data(request: MultiMatchRequest):
-    """匹配多个目标表"""
+    """匹配多个目标表，保留所有匹配结果（一对多匹配会生成多行）"""
     print(f"收到匹配请求: source_table={request.source_table}, source_column={request.source_column}")
     print(f"目标表数量: {len(request.targets)}")
     for i, t in enumerate(request.targets):
-        print(f"  目标表{i+1}: table={t.target_table}, columns={t.target_columns}, conditions={t.conditions}")
+        print(f"  目标表{i+1}: table={t.target_table}, match_col={t.target_match_column}, columns={t.target_columns}, conditions={t.conditions}")
     
     if request.source_table not in excel_data:
         raise HTTPException(status_code=404, detail=f"源表 '{request.source_table}' 不存在")
@@ -296,8 +295,6 @@ async def multi_match_data(request: MultiMatchRequest):
     
     source_df = excel_data[request.source_table].copy()
     source_df[request.source_column] = source_df[request.source_column].astype(str).str.strip()
-    
-    all_multi_value_keys = {}
     
     try:
         for target in request.targets:
@@ -343,37 +340,7 @@ async def multi_match_data(request: MultiMatchRequest):
                     merge_keys_source.append(cond.source_col)
                     merge_keys_target.append(cond.target_col)
             
-            # 检测多值情况（基于所有合并键）
-            group_cols = merge_keys_target.copy()
-            target_grouped = target_subset.groupby(group_cols)
-            
-            for keys, group in target_grouped:
-                if len(group) > 1:
-                    key_str = str(keys) if isinstance(keys, tuple) else str(keys)
-                    options = group[target.target_columns].fillna("").to_dict(orient='records')
-                    unique_options = []
-                    seen = set()
-                    for opt in options:
-                        opt_tuple = tuple(sorted(opt.items()))
-                        if opt_tuple not in seen:
-                            seen.add(opt_tuple)
-                            unique_options.append(opt)
-                    if len(unique_options) > 1:
-                        if target.target_table not in all_multi_value_keys:
-                            all_multi_value_keys[target.target_table] = {}
-                        all_multi_value_keys[target.target_table][key_str] = unique_options
-            
-            # 如果有多值且无选择，返回让用户选择
-            if all_multi_value_keys and not request.selections:
-                return {
-                    "status": "need_selection",
-                    "multi_value_keys": all_multi_value_keys,
-                    "message": f"发现多个匹配项有多个值，请选择"
-                }
-            
-            # 去重（基于所有合并键）
-            target_subset = target_subset.drop_duplicates(subset=group_cols, keep='first')
-            
+            # 不再去重，保留所有匹配值（一对多匹配会生成多行）
             # 只保留需要的目标列用于合并
             cols_to_keep = merge_keys_target + target.target_columns
             target_subset = target_subset[list(dict.fromkeys(cols_to_keep))]  # 去重保持顺序
@@ -382,7 +349,7 @@ async def multi_match_data(request: MultiMatchRequest):
             rename_map = {col: f"{col}({target.target_table})" for col in target.target_columns}
             target_subset = target_subset.rename(columns=rename_map)
             
-            # 执行左连接
+            # 执行左连接（保留所有匹配）
             source_df = source_df.merge(
                 target_subset,
                 left_on=merge_keys_source,
