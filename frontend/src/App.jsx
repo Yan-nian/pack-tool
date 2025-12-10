@@ -13,10 +13,9 @@ import './App.css';
 const { Header, Content, Sider } = Layout;
 const { Search } = Input;
 const { Option } = Select;
-const { TabPane } = Tabs;
 
-// 配置axios基础URL
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+// 配置axios基础URL (Vite 使用 import.meta.env)
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 axios.defaults.baseURL = API_BASE_URL;
 
 function App() {

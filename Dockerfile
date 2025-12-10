@@ -1,22 +1,22 @@
-# Stage 1: 构建前端
-FROM node:16-bullseye AS frontend-builder
+# Stage 1: 构建前端 (使用 Vite)
+FROM node:18-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
-# 先复制 package.json 安装依赖（利用缓存）
+# 复制 package.json 和配置
 COPY frontend/package.json ./
+COPY frontend/vite.config.js ./
 
 # 安装依赖
 RUN npm install
 
 # 复制源码
+COPY frontend/index.html ./
 COPY frontend/public ./public
 COPY frontend/src ./src
 
 # 设置环境变量并构建
-ENV REACT_APP_API_URL=/api
-ENV CI=true
-ENV GENERATE_SOURCEMAP=false
+ENV VITE_API_URL=/api
 
 RUN npm run build
 

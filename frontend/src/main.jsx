@@ -1,11 +1,11 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
+import App from './App.jsx';
 import { ConfigProvider } from 'antd';
-import zhCN from 'antd/es/locale/zh_CN';
+import zhCN from 'antd/locale/zh_CN';
+import './App.css';
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(
+ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ConfigProvider locale={zhCN}>
       <App />
