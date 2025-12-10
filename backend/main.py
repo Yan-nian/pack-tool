@@ -70,7 +70,8 @@ class MatchCondition(BaseModel):
 
 class MultiMatchTarget(BaseModel):
     target_table: str
-    target_columns: List[str]
+    target_match_column: str  # 目标表中用于匹配的列
+    target_columns: List[str]  # 要获取的列
     conditions: Optional[List[MatchCondition]] = None  # 额外的匹配限制条件
 
 class MultiMatchRequest(BaseModel):
@@ -304,7 +305,13 @@ async def multi_match_data(request: MultiMatchRequest):
                 raise HTTPException(status_code=404, detail=f"目标表 '{target.target_table}' 不存在")
             
             target_df = excel_data[target.target_table]
-            merge_column = target_df.columns[0]
+            
+            # 使用用户指定的匹配列
+            merge_column = target.target_match_column
+            if merge_column not in target_df.columns:
+                raise HTTPException(status_code=400, detail=f"目标表 '{target.target_table}' 中不存在列 '{merge_column}'")
+            
+            print(f"  匹配列: 源表[{request.source_column}] <-> 目标表[{merge_column}]")
             
             # 收集所有需要的列（包括限制条件列）
             needed_cols = [merge_column] + target.target_columns

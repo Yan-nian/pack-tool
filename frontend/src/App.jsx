@@ -169,8 +169,8 @@ function App() {
     // 验证每个目标表
     for (let i = 0; i < values.targets.length; i++) {
       const t = values.targets[i];
-      if (!t.targetTable || !t.targetColumns || !t.targetColumns.length) {
-        message.error(`请完整填写目标表 ${i + 1} 的配置`);
+      if (!t.targetTable || !t.targetMatchColumn || !t.targetColumns || !t.targetColumns.length) {
+        message.error(`请完整填写目标表 ${i + 1} 的配置（包括匹配列）`);
         return;
       }
     }
@@ -180,6 +180,7 @@ function App() {
       // 构建多表匹配参数
       const targets = values.targets.map(t => ({
         target_table: t.targetTable,
+        target_match_column: t.targetMatchColumn,  // 目标表的匹配列
         target_columns: t.targetColumns,
         conditions: t.conditions?.filter(c => c?.source_col && c?.target_col) || []
       }));
@@ -677,6 +678,7 @@ function App() {
                           placeholder="选择目标表"
                           onChange={() => {
                             // 清空已选列和条件
+                            form.setFieldValue(['targets', name, 'targetMatchColumn'], undefined);
                             form.setFieldValue(['targets', name, 'targetColumns'], []);
                             form.setFieldValue(['targets', name, 'conditions'], []);
                           }}
@@ -684,6 +686,21 @@ function App() {
                           {tables.map(table => (
                             <Option key={table.name} value={table.name}>
                               {table.name}
+                            </Option>
+                          ))}
+                        </Select>
+                      </Form.Item>
+                      
+                      <Form.Item
+                        {...restField}
+                        name={[name, 'targetMatchColumn']}
+                        label="目标表匹配列（与源表匹配列对应）"
+                        rules={[{ required: true, message: '请选择目标表中用于匹配的列' }]}
+                      >
+                        <Select placeholder="选择目标表中用于匹配的列">
+                          {targetCols.map(col => (
+                            <Option key={col} value={col}>
+                              {col}
                             </Option>
                           ))}
                         </Select>
