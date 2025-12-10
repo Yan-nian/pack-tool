@@ -28,7 +28,9 @@ function App() {
   const [pagination, setPagination] = useState({ current: 1, pageSize: 50, total: 0 });
   const [searchResults, setSearchResults] = useState(null);
   const [matchModalVisible, setMatchModalVisible] = useState(false);
-  const [matchResults, setMatchResults] = useState(null); // 匹配结果
+  const [matchResults, setMatchResults] = useState(null); // 当前显示的匹配结果
+  const [matchHistory, setMatchHistory] = useState([]); // 匹配结果历史列表
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(null); // 当前选中的匹配结果索引
   const [multiValueModal, setMultiValueModal] = useState(null); // 多值选择弹窗
   const [multiValueSelections, setMultiValueSelections] = useState({}); // 用户选择
   const [pendingMatchParams, setPendingMatchParams] = useState(null); // 待处理的匹配参数
@@ -181,14 +183,24 @@ function App() {
         fixed: index === 0 ? 'left' : undefined
       }));
       
-      // 设置匹配结果
-      setMatchResults({
+      // 创建新的匹配结果
+      const newMatchResult = {
+        id: Date.now(),
+        name: `${values.sourceTable} → ${values.targetTable}`,
         data: matchData,
         columns: matchCols,
         sourceTable: values.sourceTable,
         targetTable: values.targetTable,
-        total: response.data.total
-      });
+        total: response.data.total,
+        time: new Date().toLocaleTimeString()
+      };
+      
+      // 添加到历史列表
+      setMatchHistory(prev => [...prev, newMatchResult]);
+      setCurrentMatchIndex(matchHistory.length);
+      
+      // 设置当前显示的匹配结果
+      setMatchResults(newMatchResult);
       
       // 清除当前表选择，以显示匹配结果
       setCurrentTable(null);
@@ -293,26 +305,30 @@ function App() {
       </Header>
       
       <Layout>
-        <Sider width={250} style={{ background: '#fff', borderRight: '1px solid #f0f0f0' }}>
+        <Sider width={280} style={{ background: '#fff', borderRight: '1px solid #f0f0f0', overflow: 'auto' }}>
           <div style={{ padding: 16 }}>
-            <div style={{ marginBottom: 16, fontWeight: 'bold', fontSize: 16 }}>
-              已上传的表 ({tables.length})
+            {/* 已上传的表 */}
+            <div style={{ marginBottom: 8, fontWeight: 'bold', fontSize: 14, color: '#1890ff' }}>
+              📁 已上传的表 ({tables.length})
             </div>
             <Menu
               mode="inline"
-              selectedKeys={currentTable ? [currentTable] : []}
+              selectedKeys={currentTable ? [`table_${currentTable}`] : (currentMatchIndex !== null ? [`match_${currentMatchIndex}`] : [])}
               style={{ borderRight: 0 }}
             >
               {tables.map(table => (
                 <Menu.Item
-                  key={table.name}
+                  key={`table_${table.name}`}
                   onClick={() => {
                     setCurrentTable(table.name);
+                    setCurrentMatchIndex(null);
+                    setMatchResults(null);
                     loadTableData(table.name, 1);
                   }}
+                  style={{ height: 'auto', lineHeight: 1.5, padding: '8px 16px', marginBottom: 4 }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={table.name}>
                       {table.name}
                     </span>
                     <DeleteOutlined
@@ -320,15 +336,61 @@ function App() {
                         e.stopPropagation();
                         handleDeleteTable(table.name);
                       }}
-                      style={{ color: '#ff4d4f' }}
+                      style={{ color: '#ff4d4f', flexShrink: 0 }}
                     />
                   </div>
-                  <div style={{ fontSize: 12, color: '#999' }}>
+                  <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
                     {table.rows} 行 × {table.columns.length} 列
                   </div>
                 </Menu.Item>
               ))}
             </Menu>
+            
+            {/* 匹配结果 */}
+            {matchHistory.length > 0 && (
+              <>
+                <div style={{ marginTop: 20, marginBottom: 8, fontWeight: 'bold', fontSize: 14, color: '#52c41a' }}>
+                  🔗 匹配结果 ({matchHistory.length})
+                </div>
+                <Menu
+                  mode="inline"
+                  selectedKeys={currentMatchIndex !== null ? [`match_${currentMatchIndex}`] : []}
+                  style={{ borderRight: 0 }}
+                >
+                  {matchHistory.map((match, index) => (
+                    <Menu.Item
+                      key={`match_${index}`}
+                      onClick={() => {
+                        setCurrentTable(null);
+                        setCurrentMatchIndex(index);
+                        setMatchResults(match);
+                      }}
+                      style={{ height: 'auto', lineHeight: 1.5, padding: '8px 16px', marginBottom: 4 }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={match.name}>
+                          {match.name}
+                        </span>
+                        <DeleteOutlined
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMatchHistory(prev => prev.filter((_, i) => i !== index));
+                            if (currentMatchIndex === index) {
+                              setMatchResults(null);
+                              setCurrentMatchIndex(null);
+                            }
+                          }}
+                          style={{ color: '#ff4d4f', flexShrink: 0 }}
+                        />
+                      </div>
+                      <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
+                        {match.total} 条 · {match.time}
+                      </div>
+                    </Menu.Item>
+                  ))}
+                </Menu>
+              </>
+            )}
           </div>
         </Sider>
         
