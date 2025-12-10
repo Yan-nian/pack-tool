@@ -187,6 +187,12 @@ async def match_data(request: MatchRequest):
         # 准备匹配所需的列
         target_subset = target_df[[merge_column] + request.target_columns].drop_duplicates()
         
+        # 将匹配列转换为字符串类型以避免类型不匹配问题
+        source_df = source_df.copy()
+        target_subset = target_subset.copy()
+        source_df[request.source_column] = source_df[request.source_column].astype(str).str.strip()
+        target_subset[merge_column] = target_subset[merge_column].astype(str).str.strip()
+        
         # 执行左连接
         result_df = source_df.merge(
             target_subset,
