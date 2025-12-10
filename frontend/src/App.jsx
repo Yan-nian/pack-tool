@@ -41,6 +41,17 @@ function App() {
   });
   const [form] = Form.useForm();
   
+  // 从 localStorage 加载匹配配置
+  const loadMatchConfig = () => {
+    const saved = localStorage.getItem('excel-tool-match-config');
+    return saved ? JSON.parse(saved) : null;
+  };
+  
+  // 保存匹配配置到 localStorage
+  const saveMatchConfig = (values) => {
+    localStorage.setItem('excel-tool-match-config', JSON.stringify(values));
+  };
+  
   // 监听表单字段变化用于联动
   const sourceTableValue = Form.useWatch('sourceTable', form);
   const targetsValue = Form.useWatch('targets', form); // 监听整个targets数组
@@ -108,6 +119,30 @@ function App() {
   const getVisibleColumns = (matchId, allColumns) => {
     const hidden = hiddenColumns[matchId] || [];
     return allColumns.filter(col => !hidden.includes(col.key));
+  };
+
+  // 打开匹配对话框并加载保存的配置
+  const openMatchModal = () => {
+    const savedConfig = loadMatchConfig();
+    if (savedConfig) {
+      // 验证保存的表是否还存在
+      const tableNames = tables.map(t => t.name);
+      if (tableNames.includes(savedConfig.sourceTable)) {
+        // 过滤掉不存在的目标表
+        const validTargets = (savedConfig.targets || [{}]).filter(t => 
+          !t.targetTable || tableNames.includes(t.targetTable)
+        );
+        form.setFieldsValue({
+          ...savedConfig,
+          targets: validTargets.length > 0 ? validTargets : [{}]
+        });
+      } else {
+        form.setFieldsValue({ targets: [{}] });
+      }
+    } else {
+      form.setFieldsValue({ targets: [{}] });
+    }
+    setMatchModalVisible(true);
   };
 
   // 加载表列表
@@ -289,6 +324,9 @@ function App() {
         time: new Date().toLocaleTimeString()
       };
       
+      // 保存匹配配置到 localStorage
+      saveMatchConfig(values);
+      
       // 添加到历史列表
       setMatchHistory(prev => [...prev, newMatchResult]);
       setCurrentMatchIndex(matchHistory.length);
@@ -301,7 +339,6 @@ function App() {
       
       message.success(`匹配完成，共 ${response.data.total} 条数据`);
       setMatchModalVisible(false);
-      form.resetFields();
     } catch (error) {
       message.error('匹配失败: ' + (error.response?.data?.detail || error.message));
     } finally {
@@ -507,10 +544,7 @@ function App() {
                   <Space>
                     <Button
                       icon={<LinkOutlined />}
-                      onClick={() => {
-                        form.setFieldsValue({ targets: [{}] });
-                        setMatchModalVisible(true);
-                      }}
+                      onClick={openMatchModal}
                       disabled={tables.length < 2}
                     >
                       数据匹配
@@ -709,10 +743,7 @@ function App() {
                     <Button 
                       icon={<LinkOutlined />} 
                       size="large"
-                      onClick={() => {
-                        form.setFieldsValue({ targets: [{}] });
-                        setMatchModalVisible(true);
-                      }}
+                      onClick={openMatchModal}
                     >
                       数据匹配
                     </Button>
