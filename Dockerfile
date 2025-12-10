@@ -17,20 +17,15 @@ WORKDIR /app/frontend
 # 复制前端依赖文件
 COPY frontend/package.json .
 
-# 设置 npm 配置
-RUN npm config set fetch-retry-mintimeout 20000 && \
-    npm config set fetch-retry-maxtimeout 120000
-
-# 安装依赖
-RUN npm install --legacy-peer-deps --loglevel verbose
+# 安装依赖（包含 react-scripts）
+RUN npm install --legacy-peer-deps
 
 # 复制前端源码
 COPY frontend/public ./public
 COPY frontend/src ./src
 
-# 设置环境变量（前端构建时需要）
+# 设置环境变量
 ENV REACT_APP_API_URL=/api
-ENV NODE_OPTIONS=--max_old_space_size=4096
 ENV CI=true
 
 # 构建前端
