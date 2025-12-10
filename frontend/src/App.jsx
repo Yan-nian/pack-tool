@@ -38,11 +38,16 @@ function App() {
   
   // 监听表单字段变化用于联动
   const sourceTableValue = Form.useWatch('sourceTable', form);
-  const targetTableValue = Form.useWatch('targetTable', form);
+  const targetsValue = Form.useWatch('targets', form); // 监听整个targets数组
   
   // 获取选中表的列
   const sourceTableColumns = tables.find(t => t.name === sourceTableValue)?.columns || [];
-  const targetTableColumns = tables.find(t => t.name === targetTableValue)?.columns || [];
+  
+  // 获取指定目标表的列
+  const getTargetTableColumns = (index) => {
+    const targetTable = targetsValue?.[index]?.targetTable;
+    return tables.find(t => t.name === targetTable)?.columns || [];
+  };
 
   // 加载表列表
   const loadTables = async () => {
@@ -605,8 +610,7 @@ function App() {
             {(fields, { add, remove }) => (
               <>
                 {fields.map(({ key, name, ...restField }, index) => {
-                  const targetTableValue = form.getFieldValue(['targets', name, 'targetTable']);
-                  const targetCols = tables.find(t => t.name === targetTableValue)?.columns || [];
+                  const targetCols = getTargetTableColumns(name);
                   
                   return (
                     <Card 
