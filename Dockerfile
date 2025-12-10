@@ -1,37 +1,37 @@
 # Stage 1: 构建前端
-FROM node:18 as frontend-builder
-
-WORKDIR /app
-
-# 复制前端文件
-COPY frontend/package.json frontend/package.json
-COPY frontend/public frontend/public
-COPY frontend/src frontend/src
+FROM node:16-bullseye AS frontend-builder
 
 WORKDIR /app/frontend
 
-# 设置环境变量
+# 先复制 package.json 安装依赖（利用缓存）
+COPY frontend/package.json ./
+
+# 安装依赖
+RUN npm install
+
+# 复制源码
+COPY frontend/public ./public
+COPY frontend/src ./src
+
+# 设置环境变量并构建
 ENV REACT_APP_API_URL=/api
 ENV CI=true
 ENV GENERATE_SOURCEMAP=false
-ENV NODE_OPTIONS=--openssl-legacy-provider
 
-# 安装依赖并构建
-RUN npm install --force && \
-    npm run build
+RUN npm run build
 
-# Stage 2: Python 后端基础
-FROM python:3.11-slim as backend-builder
+
+# Stage 2: Python 后端
+FROM python:3.11-slim AS backend-builder
 
 WORKDIR /app
 
-# 安装 Python 依赖
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 
 # Stage 3: 最终镜像
-FROM python:3.11-slim
+FROM python:3.11-slim AS production
 
 # 安装 nginx 和必要工具
 RUN apt-get update && \
