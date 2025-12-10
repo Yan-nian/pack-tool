@@ -367,6 +367,9 @@ async def multi_match_data(request: MultiMatchRequest):
                 if dup_col in source_df.columns:
                     source_df = source_df.drop(columns=[dup_col])
         
+        print(f"匹配完成，结果列: {list(source_df.columns)}")
+        print(f"结果行数: {len(source_df)}")
+        
         data = source_df.fillna("").to_dict(orient='records')
         
         return {

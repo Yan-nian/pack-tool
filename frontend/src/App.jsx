@@ -192,6 +192,13 @@ function App() {
       
       const response = await axios.post('/multi-match', params);
       console.log('Multi-match response:', response.data);
+      console.log('Response columns:', response.data.columns);
+      console.log('Response data sample:', response.data.data?.[0]);
+      
+      if (!response.data.data || !response.data.columns) {
+        message.error('服务器返回数据格式错误');
+        return;
+      }
       
       const matchData = response.data.data;
       const matchCols = response.data.columns.map((col, index) => ({
