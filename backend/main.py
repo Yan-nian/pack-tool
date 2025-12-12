@@ -427,6 +427,8 @@ async def multi_match_data(request: MultiMatchRequest):
 async def export_excel(request: ExportRequest):
     """导出为Excel文件"""
     try:
+        log(f"导出请求: 列数={len(request.columns)}, 数据行数={len(request.data)}")
+        
         df = pd.DataFrame(request.data)
         
         # 按照指定列顺序
@@ -439,12 +441,20 @@ async def export_excel(request: ExportRequest):
         
         output.seek(0)
         
+        # URL编码文件名以支持中文
+        from urllib.parse import quote
         filename = f"{request.filename}.xlsx"
+        encoded_filename = quote(filename)
+        
+        log(f"导出成功: {filename}")
         
         return StreamingResponse(
             output,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+                "Access-Control-Expose-Headers": "Content-Disposition"
+            }
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")

@@ -348,12 +348,18 @@ function App() {
 
   // 导出匹配结果为Excel（只导出可见列）
   const handleExportMatch = async () => {
-    if (!matchResults || !matchResults.data.length) return;
+    if (!matchResults || !matchResults.data.length) {
+      message.warning('没有数据可导出');
+      return;
+    }
     
+    setLoading(true);
     try {
       // 获取可见的列
       const visibleCols = getVisibleColumns(matchResults.id, matchResults.columns);
       const visibleColKeys = visibleCols.map(col => col.dataIndex);
+      
+      console.log('导出请求:', { columns: visibleColKeys, dataLength: matchResults.data.length });
       
       const response = await axios.post('/export-excel', {
         data: matchResults.data,
@@ -363,15 +369,24 @@ function App() {
         responseType: 'blob'
       });
       
-      const url = URL.createObjectURL(response.data);
+      // 创建下载链接
+      const blob = new Blob([response.data], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `匹配结果_${matchResults.name || matchResults.sourceTable}.xlsx`;
+      link.setAttribute('download', `匹配结果_${matchResults.name || matchResults.sourceTable}.xlsx`);
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
       message.success('导出成功');
     } catch (error) {
-      message.error('导出失败: ' + error.message);
+      console.error('导出错误:', error);
+      message.error('导出失败: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setLoading(false);
     }
   };
 
